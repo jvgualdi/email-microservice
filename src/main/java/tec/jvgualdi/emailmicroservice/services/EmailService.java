@@ -21,6 +21,7 @@ public class EmailService {
     @Autowired
     private JavaMailSender mailSender;
 
+
     public EmailModel sendEmail(EmailModel email) {
         email.setEmailSentDate(LocalDateTime.now());
         try{
@@ -30,7 +31,6 @@ public class EmailService {
             message.setSubject(email.getSubject());
             message.setText(email.getBody());
             mailSender.send(message);
-
             email.setStatusEmail(StatusEmail.SENT);
         }catch (MailException e){
             email.setStatusEmail(StatusEmail.ERROR);
@@ -38,4 +38,5 @@ public class EmailService {
             return emailRepository.save(email);
         }
     }
+
 }
