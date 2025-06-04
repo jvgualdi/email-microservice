@@ -61,9 +61,9 @@ public class EmailService {
             log.setStatus(StatusEmail.ERROR);
         } finally {
             log.setUpdatedAt(Instant.now());
-            var email = emailLogRepository.save(log);
-            return new EmailResponse(email.getId(), email.getStatus().name());
+            emailLogRepository.save(log);
         }
+        return new EmailResponse(log.getId(), log.getStatus().name());
     }
 
 
