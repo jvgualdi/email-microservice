@@ -1,101 +1,70 @@
 package tec.jvgualdi.emailmicroservice.services;
 
 
-import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import tec.jvgualdi.emailmicroservice.dtos.EmailRequest;
-import tec.jvgualdi.emailmicroservice.enums.RecipientType;
+import tec.jvgualdi.emailmicroservice.dtos.EmailResponse;
 import tec.jvgualdi.emailmicroservice.enums.StatusEmail;
-import tec.jvgualdi.emailmicroservice.models.Email;
-import tec.jvgualdi.emailmicroservice.models.Mailing;
-import tec.jvgualdi.emailmicroservice.models.MailingRecipient;
-import tec.jvgualdi.emailmicroservice.repositories.EmailRepository;
-import tec.jvgualdi.emailmicroservice.repositories.MailingRecipientRepository;
-import tec.jvgualdi.emailmicroservice.repositories.MailingRepository;
-import java.time.LocalDateTime;
+import tec.jvgualdi.emailmicroservice.models.EmailLog;
+import tec.jvgualdi.emailmicroservice.repositories.EmailLogRepository;
+
+import java.time.Instant;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Map;
+import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class EmailService {
 
-    @Autowired
-    private MailingRepository mailingRepository;
-
-    @Autowired
-    private EmailRepository emailRepository;
-
-    @Autowired
-    private MailingRecipientRepository mailingRecipientRepository;
-
-    @Autowired
-    private JavaMailSender mailSender;
+    private final EmailLogRepository emailLogRepository;
+    private final JavaMailSender mailSender;
 
 
-    public Mailing sendEmail(EmailRequest mailingRequest) {
-        Mailing mailing = new Mailing();
-        MailingRecipient recipient = new MailingRecipient();
+    @Transactional
+    public EmailResponse sendEmail(EmailRequest req) {
+        var log = new EmailLog();
+        log.setId(UUID.randomUUID());
+        log.setReplyTo(req.replyTo());
+        log.setFrom(req.emailFrom());
+        log.setRecipients(Map.of(
+                "to",  req.emailTo(),
+                "cc",  req.cc()  != null ? req.cc()  : List.of(),
+                "bcc", req.bcc() != null ? req.bcc() : List.of()
+        ));
+        log.setSubject(req.subject());
+        log.setBody(req.body());
+        log.setStatus(StatusEmail.PENDING);
+        log.setSentAt(Instant.now());
+        log.setUpdatedAt(Instant.now());
+        emailLogRepository.save(log);
 
+        try {
+            var msg = new SimpleMailMessage();
+            msg.setFrom(log.getFrom());
+            msg.setTo(  log.getRecipients().get("to").toArray(new String[0]) );
+            msg.setCc(  log.getRecipients().get("cc").toArray(new String[0]) );
+            msg.setBcc( log.getRecipients().get("bcc").toArray(new String[0]) );
+            msg.setReplyTo(log.getReplyTo());
+            msg.setSubject(log.getSubject());
+            msg.setText(log.getBody());
 
-        try{
-            BeanUtils.copyProperties(mailingRequest, mailing);
-            SimpleMailMessage message = new SimpleMailMessage();
+            mailSender.send(msg);
 
-            List<Email> emailsToSend = saveEmailAddresses(mailingRequest.getEmailTo());
-            List<Email> emailsCc = saveEmailAddresses(mailingRequest.getCc());
-            List<Email> emailsBcc = saveEmailAddresses(mailingRequest.getBcc());
-
-            message.setFrom(mailingRequest.getEmailFrom());
-            message.setTo(emailsToSend.stream().map(Email::getEmailAddress).toArray(String[]::new));
-            message.setCc(emailsCc.stream().map(Email::getEmailAddress).toArray(String[]::new));
-            message.setBcc(emailsBcc.stream().map(Email::getEmailAddress).toArray(String[]::new));
-            message.setSubject(mailingRequest.getSubject());
-            message.setText(mailingRequest.getBody());
-
-            mailing.setStatusEmail(StatusEmail.PENDING);
-            mailing.setEmailSentDate(LocalDateTime.now());
-            mailingRepository.save(mailing);
-
-            linkEmail(emailsToSend, mailing, RecipientType.TO);
-            linkEmail(emailsCc, mailing, RecipientType.CC);
-            linkEmail(emailsBcc, mailing, RecipientType.BCC);
-
-            mailSender.send(message);
-
-            mailing.setEmailSentDate(LocalDateTime.now());
-            mailing.setStatusEmail(StatusEmail.SENT);
-        }catch (MailException e){
-            mailing.setStatusEmail(StatusEmail.ERROR);
-        }finally {
-            return mailingRepository.save(mailing);
+            log.setStatus(StatusEmail.SENT);
+        } catch (MailException ex) {
+            log.setStatus(StatusEmail.ERROR);
+        } finally {
+            log.setUpdatedAt(Instant.now());
+            var email = emailLogRepository.save(log);
+            return new EmailResponse(email.getId(), email.getStatus().name());
         }
     }
 
-    public List<Email> saveEmailAddresses(List<String> emailAddresses) {
-        return emailAddresses.stream().map(email -> {
-            Email existingEmail = emailRepository.findByEmailAddress(email);
-            if (existingEmail == null) {
-                Email emailToSave = new Email();
-                emailToSave.setEmailAddress(email);
-                return emailRepository.save(emailToSave);
-            }
-            System.out.println();
-            return existingEmail;
-        }).collect(Collectors.toList());
-    }
-
-    public void linkEmail(List<Email> emails, Mailing mailing, RecipientType recipientType) {
-        emails.forEach(emailAddress -> {
-            MailingRecipient recipient = new MailingRecipient();
-            recipient.setEmailAddress(emailAddress);
-            recipient.setRecipientType(recipientType);
-            recipient.setMailing(mailing);
-            mailingRecipientRepository.save(recipient);
-        });
-    }
 
 }
