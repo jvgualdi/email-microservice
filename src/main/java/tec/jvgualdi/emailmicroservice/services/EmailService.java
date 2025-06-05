@@ -2,6 +2,7 @@ package tec.jvgualdi.emailmicroservice.services;
 
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -14,13 +15,16 @@ import tec.jvgualdi.emailmicroservice.models.EmailLog;
 import tec.jvgualdi.emailmicroservice.repositories.EmailLogRepository;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class EmailService {
+    @Value("${spring.mail.username}")
+    private String emailFrom;
+
+    @Value("${spring.mail.password}")
+    private String emailPassword;
 
     private final EmailLogRepository emailLogRepository;
     private final JavaMailSender mailSender;
@@ -32,11 +36,7 @@ public class EmailService {
         log.setId(UUID.randomUUID());
         log.setReplyTo(req.replyTo());
         log.setFrom(req.emailFrom());
-        log.setRecipients(Map.of(
-                "to",  req.emailTo(),
-                "cc",  req.cc()  != null ? req.cc()  : List.of(),
-                "bcc", req.bcc() != null ? req.bcc() : List.of()
-        ));
+        log.setRecipients(req.emailTo());
         log.setSubject(req.subject());
         log.setBody(req.body());
         log.setStatus(StatusEmail.PENDING);
@@ -47,13 +47,11 @@ public class EmailService {
         try {
             var msg = new SimpleMailMessage();
             msg.setFrom(log.getFrom());
-            msg.setTo(  log.getRecipients().get("to").toArray(new String[0]) );
-            msg.setCc(  log.getRecipients().get("cc").toArray(new String[0]) );
-            msg.setBcc( log.getRecipients().get("bcc").toArray(new String[0]) );
-            msg.setReplyTo(log.getReplyTo());
+            msg.setTo( log.getRecipients().toArray(new String[0]) );
             msg.setSubject(log.getSubject());
             msg.setText(log.getBody());
-
+            System.out.println(emailFrom);
+            System.out.println(emailPassword);
             mailSender.send(msg);
 
             log.setStatus(StatusEmail.SENT);

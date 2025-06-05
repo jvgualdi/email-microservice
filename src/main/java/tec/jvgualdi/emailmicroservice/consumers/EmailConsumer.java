@@ -17,4 +17,6 @@ public class EmailConsumer {
     public void listen(@Payload EmailRequest emailRequest) {
         emailService.sendEmail(emailRequest);
     }
+
+
 }
